@@ -27,3 +27,13 @@ wget --no-check-certificate -O netspeeder.sh [https://raw.githubusercontent.com/
 重启服务,systemctl restart net-speeder
 停止服务,systemctl stop net-speeder
 禁用开机自启,systemctl disable net-speeder
+
+
+https://github.com/byJoey/Actions-bbr-v3
+bbr加速
+
+https://github.com/XTLS/Xray-core/releases/tag/v26.4.25
+客户端
+
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+服务端
