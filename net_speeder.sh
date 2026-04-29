@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# NetSpeeder 一键无脑安装脚本 (最终版)
-# 全程自动化：安装依赖 -> 编译 -> 识别网卡 -> 配置开机自启 -> 启动
+# NetSpeeder 一键安装脚本 (带实时进度版)
+# 全程自动化，并显示详细的安装过程
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -27,11 +27,13 @@ get_main_nic() {
     echo "$NIC"
 }
 
-# 3. 自动安装依赖
+# 3. 自动安装依赖 (已移除静音参数，显示详细过程)
 echo -e "${GREEN}>>> 正在安装编译依赖 (gcc, make, libpcap)...${NC}"
 if [ -f /etc/redhat-release ]; then
+    echo -e "${YELLOW}[CentOS/RedHat] 正在运行 yum 安装依赖：${NC}"
     yum install -y wget gcc gcc-c++ libpcap-devel make unzip
 elif [ -f /etc/debian_version ]; then
+    echo -e "${YELLOW}[Debian/Ubuntu] 正在运行 apt-get 更新和安装依赖：${NC}"
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y wget gcc g++ libpcap0.8-dev make unzip
 else
@@ -39,7 +41,7 @@ else
     exit 1
 fi
 
-# 4. 下载并编译源码
+# 4. 下载并编译源码 (显示下载进度)
 echo -e "${GREEN}>>> 正在下载并编译 NetSpeeder...${NC}"
 wget --no-check-certificate -O /tmp/netspeeder.zip https://github.com/hu619340515/net_speeder/archive/refs/heads/main.zip
 if [ ! -f "/tmp/netspeeder.zip" ]; then
@@ -47,6 +49,7 @@ if [ ! -f "/tmp/netspeeder.zip" ]; then
     exit 1
 fi
 
+echo -e "${YELLOW}正在解压源码并进入编译：${NC}"
 unzip -o /tmp/netspeeder.zip -d /tmp/
 cd /tmp/net_speeder-main || exit
 sh build.sh
@@ -84,6 +87,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+    echo -e "${YELLOW}正在重载 systemd 配置并启动服务：${NC}"
     systemctl daemon-reload
     systemctl enable netspeeder.service
     systemctl restart netspeeder.service
@@ -94,6 +98,7 @@ else
     sed -i '/netspeeder/d' /etc/rc.local
     echo "nohup $INSTALL_DIR/netspeeder $NIC \"ip\" >/dev/null 2>&1 &" >> /etc/rc.local
     chmod +x /etc/rc.local
+    echo -e "${YELLOW}检测到老旧系统，已使用 rc.local 配置自启。${NC}"
 fi
 
 # 6. 检查并输出最终状态
