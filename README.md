@@ -22,18 +22,22 @@
 
 
 任务,命令
+systemctl status netspeeder # 查看状态
+systemctl start netspeeder # 启动
+systemctl stop netspeeder # 停止
+systemctl restart netspeeder # 重启
+systemctl enable netspeeder # 开机自启
+systemctl disable netspeeder # 取消自启
+
 查看实时日志,journalctl -u net-speeder -f
-查看运行状态,systemctl status net-speeder
-重启服务,systemctl restart net-speeder
-停止服务,systemctl stop net-speeder
-禁用开机自启,systemctl disable net-speeder
 
 
 https://github.com/byJoey/Actions-bbr-v3
 bbr加速
 
+3x-ui服务端：
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+
+
 https://github.com/XTLS/Xray-core/releases/tag/v26.4.25
 客户端
-
-bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
-服务端
