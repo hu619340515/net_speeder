@@ -1,77 +1,65 @@
-cat << 'EOF' > /root/netspeeder.sh
 #!/bin/bash
-echo "--- 正在开始一键安装与配置 (修复路径兼容版) ---"
 
-# 1. 更新并安装基础环境
-apt-get update
-apt-get install -y build-essential libnet1-dev libpcap0.8-dev wget unzip ethtool
+# NetSpeeder 一键编译安装脚本 (整合版)
+# 适用于 CentOS 6/7 和 Debian/Ubuntu (KVM/VPS)
 
-# 2. 确定 ethtool 的绝对路径 (防止 systemd 找不到)
-ETHTOOL_PATH=$(which ethtool)
-if [ -z "$ETHTOOL_PATH" ]; then
-    echo "错误: 未能安装 ethtool，请检查网络。"
-    exit 1
-fi
-echo "ethtool 路径: $ETHTOOL_PATH"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
 
-# 3. 下载并解压
-cd /root
-rm -rf net-speeder-master*
-wget --no-check-certificate https://github.com/snooda/net-speeder/archive/master.zip -O net-speeder-master.zip
-unzip -o net-speeder-master.zip
-cd net-speeder-master
-
-# 4. 编译
-if [ -d "/proc/vz" ]; then
-    echo "检测到 OpenVZ 环境，使用 COOKED 模式编译..."
-    sh build.sh -DCOOKED
-else
-    echo "检测到 KVM/物理机环境，使用普通模式编译..."
-    sh build.sh
+# 1. 检查是否为 Root 用户
+if [ "$EUID" -ne 0 ]; then
+  echo -e "${RED}错误: 请使用 root 用户运行此脚本！${NC}"
+  exit 1
 fi
 
-# 检查编译结果
-if [ ! -f "/root/net-speeder-master/net_speeder" ]; then
-    echo "编译失败，文件未生成！"
-    exit 1
-fi
+# 2. 自动安装依赖环境
+install_deps() {
+    echo -e "${GREEN}>>> 正在检测并安装编译依赖 (gcc, make, libpcap)...${NC}"
+    
+    if [ -f /etc/redhat-release ]; then
+        # CentOS/RedHat 系统
+        yum install -y wget gcc gcc-c++ libpcap-devel make > /dev/null 2>&1
+    elif [ -f /etc/debian_version ]; then
+        # Debian/Ubuntu 系统
+        apt-get update > /dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y wget gcc g++ libpcap0.8-dev make > /dev/null 2>&1
+    else
+        echo -e "${RED}不支持的操作系统，请手动安装 gcc, make, libpcap-dev${NC}"
+        exit 1
+    fi
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}依赖安装失败，请检查网络连接或系统源${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}>>> 依赖安装完成${NC}"
+}
 
-# 5. 获取网卡名称
-INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
-[ -z "$INTERFACE" ] && INTERFACE="eth0"
-echo "加速网卡: $INTERFACE"
+# 3. 下载源码
+download_source() {
+    echo -e "${GREEN}>>> 正在下载 NetSpeeder 源码...${NC}"
+    # 使用修正后的文件名 net_speeder.sh (双 e) 和 main 分支
+    wget --no-check-certificate -O net_speeder.sh https://raw.githubusercontent.com/hu619340515/net_speeder/main/net_speeder.sh
+    
+    if [ ! -f "net_speeder.sh" ]; then
+        echo -e "${RED}源码下载失败！${NC}"
+        exit 1
+    fi
+    
+    # 赋予执行权限并运行下载下来的安装逻辑
+    chmod +x net_speeder.sh
+}
 
-# 6. 写入 Systemd 服务 (使用绝对路径和自动检测的 ethtool)
-cat << SERVICE > /etc/systemd/system/net-speeder.service
-[Unit]
-Description=net-speeder Optimization Service
-After=network.target
+# 4. 执行安装
+main() {
+    install_deps
+    download_source
+    
+    echo -e "${GREEN}>>> 开始执行 NetSpeeder 安装...${NC}"
+    # 执行刚才下载的脚本
+    # 注意：这里直接调用下载的脚本，它内部会进行编译
+    ./net_speeder.sh
+}
 
-[Service]
-Type=simple
-WorkingDirectory=/root/net-speeder-master
-# 核心修复：动态使用 ethtool 路径并关闭 TSO
-ExecStartPre=$ETHTOOL_PATH -K $INTERFACE tso off
-ExecStart=/root/net-speeder-master/net_speeder $INTERFACE "ip"
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-
-# 7. 启动服务
-systemctl daemon-reload
-systemctl enable net-speeder
-systemctl restart net-speeder
-
-echo "------------------------------------------------"
-echo "安装并修复完成！"
-echo "服务状态: \$(systemctl is-active net-speeder)"
-echo "------------------------------------------------"
-systemctl status net-speeder --no-pager
-EOF
-
-# 授权并立刻执行
-chmod +x /root/netspeeder.sh
-/root/netspeeder.sh
+main
