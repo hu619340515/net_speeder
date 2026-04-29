@@ -20,6 +20,8 @@
 
 wget --no-check-certificate -O netspeeder.sh [https://raw.githubusercontent.com/hu619340515/net_speeder/main/netspeeder.sh](https://raw.githubusercontent.com/hu619340515/net_speeder/main/netspeeder.sh) && chmod +x netspeeder.sh && ./netspeeder.sh
 
+wget --no-check-certificate -O net_speeder.sh   https://raw.githubusercontent.com/hu619340515/net_speeder/main/net_speeder.sh   && chmod +x net_speeder.sh && ./net_speeder.sh
+
 
 任务,命令
 查看实时日志,journalctl -u net-speeder -f
