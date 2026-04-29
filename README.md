@@ -23,10 +23,15 @@
 
 任务,命令
 systemctl status netspeeder # 查看状态
+
 systemctl start netspeeder # 启动
+
 systemctl stop netspeeder # 停止
+
 systemctl restart netspeeder # 重启
+
 systemctl enable netspeeder # 开机自启
+
 systemctl disable netspeeder # 取消自启
 
 查看实时日志,journalctl -u net-speeder -f
