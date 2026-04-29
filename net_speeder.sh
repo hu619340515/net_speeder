@@ -1,65 +1,109 @@
 #!/bin/bash
 
-# NetSpeeder 一键编译安装脚本 (整合版)
-# 适用于 CentOS 6/7 和 Debian/Ubuntu (KVM/VPS)
+# NetSpeeder 一键无脑安装脚本 (最终版)
+# 全程自动化：安装依赖 -> 编译 -> 识别网卡 -> 配置开机自启 -> 启动
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
+INSTALL_DIR="/usr/local/netspeeder"
 
-# 1. 检查是否为 Root 用户
+# 1. 检查 Root 权限
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}错误: 请使用 root 用户运行此脚本！${NC}"
   exit 1
 fi
 
-# 2. 自动安装依赖环境
-install_deps() {
-    echo -e "${GREEN}>>> 正在检测并安装编译依赖 (gcc, make, libpcap)...${NC}"
-    
-    if [ -f /etc/redhat-release ]; then
-        # CentOS/RedHat 系统
-        yum install -y wget gcc gcc-c++ libpcap-devel make > /dev/null 2>&1
-    elif [ -f /etc/debian_version ]; then
-        # Debian/Ubuntu 系统
-        apt-get update > /dev/null 2>&1
-        DEBIAN_FRONTEND=noninteractive apt-get install -y wget gcc g++ libpcap0.8-dev make > /dev/null 2>&1
-    else
-        echo -e "${RED}不支持的操作系统，请手动安装 gcc, make, libpcap-dev${NC}"
-        exit 1
+# 2. 自动获取主网卡名称
+get_main_nic() {
+    NIC=$(ip route | grep default | awk '{print $5}' | head -n 1)
+    if [ -z "$NIC" ]; then
+        NIC=$(ip link | grep -E "^[0-9]+:" | grep -v "lo:" | awk -F: '{print $2}' | awk '{print $1}' | head -n 1)
     fi
-    
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}依赖安装失败，请检查网络连接或系统源${NC}"
-        exit 1
+    if [ -z "$NIC" ] && [ -e /dev/net/tun ]; then
+        NIC="venet0"
     fi
-    echo -e "${GREEN}>>> 依赖安装完成${NC}"
+    echo "$NIC"
 }
 
-# 3. 下载源码
-download_source() {
-    echo -e "${GREEN}>>> 正在下载 NetSpeeder 源码...${NC}"
-    # 使用修正后的文件名 net_speeder.sh (双 e) 和 main 分支
-    wget --no-check-certificate -O net_speeder.sh https://raw.githubusercontent.com/hu619340515/net_speeder/main/net_speeder.sh
-    
-    if [ ! -f "net_speeder.sh" ]; then
-        echo -e "${RED}源码下载失败！${NC}"
-        exit 1
-    fi
-    
-    # 赋予执行权限并运行下载下来的安装逻辑
-    chmod +x net_speeder.sh
-}
+# 3. 自动安装依赖
+echo -e "${GREEN}>>> 正在安装编译依赖 (gcc, make, libpcap)...${NC}"
+if [ -f /etc/redhat-release ]; then
+    yum install -y wget gcc gcc-c++ libpcap-devel make unzip
+elif [ -f /etc/debian_version ]; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget gcc g++ libpcap0.8-dev make unzip
+else
+    echo -e "${RED}不支持的操作系统！${NC}"
+    exit 1
+fi
 
-# 4. 执行安装
-main() {
-    install_deps
-    download_source
-    
-    echo -e "${GREEN}>>> 开始执行 NetSpeeder 安装...${NC}"
-    # 执行刚才下载的脚本
-    # 注意：这里直接调用下载的脚本，它内部会进行编译
-    ./net_speeder.sh
-}
+# 4. 下载并编译源码
+echo -e "${GREEN}>>> 正在下载并编译 NetSpeeder...${NC}"
+wget --no-check-certificate -O /tmp/netspeeder.zip https://github.com/hu619340515/net_speeder/archive/refs/heads/main.zip
+if [ ! -f "/tmp/netspeeder.zip" ]; then
+    echo -e "${RED}下载失败！请检查网络。${NC}"
+    exit 1
+fi
 
-main
+unzip -o /tmp/netspeeder.zip -d /tmp/
+cd /tmp/net_speeder-main || exit
+sh build.sh
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}编译失败！请检查上方报错信息。${NC}"
+    exit 1
+fi
+
+mkdir -p "$INSTALL_DIR"
+cp netspeeder "$INSTALL_DIR/"
+echo -e "${GREEN}>>> 编译安装成功！${NC}"
+
+# 5. 配置开机自启与启动服务
+NIC=$(get_main_nic)
+if [ -z "$NIC" ]; then
+    echo -e "${RED}无法自动识别网卡，安装中止！${NC}"
+    exit 1
+fi
+echo -e "${GREEN}>>> 检测到主网卡为: $NIC，正在配置开机自启...${NC}"
+
+if command -v systemctl &> /dev/null; then
+    # 现代系统使用 systemd
+    cat > /etc/systemd/system/netspeeder.service <<EOF
+[Unit]
+Description=NetSpeeder Network Accelerator
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/netspeeder $NIC "ip"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable netspeeder.service
+    systemctl restart netspeeder.service
+else
+    # 老旧系统降级使用 rc.local
+    killall netspeeder 2>/dev/null
+    nohup $INSTALL_DIR/netspeeder $NIC "ip" > /dev/null 2>&1 &
+    sed -i '/netspeeder/d' /etc/rc.local
+    echo "nohup $INSTALL_DIR/netspeeder $NIC \"ip\" >/dev/null 2>&1 &" >> /etc/rc.local
+    chmod +x /etc/rc.local
+fi
+
+# 6. 检查并输出最终状态
+sleep 2
+echo -e "${GREEN}========================================${NC}"
+if command -v systemctl &> /dev/null && systemctl is-active --quiet netspeeder; then
+    echo -e "${GREEN} NetSpeeder 已成功安装并启动！${NC}"
+    echo -e "${GREEN} 运行状态: active (running)${NC}"
+else
+    echo -e "${YELLOW} NetSpeeder 已安装，正在后台运行。${NC}"
+fi
+echo -e "${GREEN} 加速网卡: $NIC${NC}"
+echo -e "${GREEN}========================================${NC}"
